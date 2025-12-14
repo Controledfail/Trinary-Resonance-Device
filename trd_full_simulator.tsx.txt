@@ -1,0 +1,541 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ScatterChart, Scatter, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area } from 'recharts';
+import { Zap, Activity, Orbit, Waves, Play, Pause, RotateCcw, Info } from 'lucide-react';
+
+const TRDFullSimulator = () => {
+  const [time, setTime] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [selectedView, setSelectedView] = useState('overview');
+  const animationRef = useRef(null);
+  
+  const [params, setParams] = useState({
+    phi_k: 1.0,
+    phi_e: 0.8,
+    phi_m: 0.9,
+    g_ke: 0.15,
+    g_em: 0.12,
+    g_mk: 0.18,
+    omega_0: 1.0,
+    gamma: 0.05,
+    drive_amp: 0.1,
+    hbar_eff: 0.1,
+    zeta_coupling: 0.2
+  });
+
+  const [ringStates, setRingStates] = useState({
+    kinetic: [],
+    electromagnetic: [],
+    mass: []
+  });
+
+  const [zetaContributions, setZetaContributions] = useState([]);
+  const [energyFlow, setEnergyFlow] = useState([]);
+  const [phaseSpace, setPhaseSpace] = useState([]);
+  const [resonanceSpectrum, setResonanceSpectrum] = useState([]);
+
+  const zetaZeros = [14.134725, 21.022040, 25.010858, 30.424876, 32.935062];
+
+  const computeRingField = (t, phi_0, omega, phase, coupling_sum) => {
+    const damping = Math.exp(-params.gamma * t);
+    const drive = params.drive_amp * Math.sin(params.omega_0 * t);
+    const quantum_fluct = params.hbar_eff * Math.random() * 0.1;
+    
+    return phi_0 * damping * Math.cos(omega * t + phase) * (1 + coupling_sum) + drive + quantum_fluct;
+  };
+
+  const zetaContribution = (s_real, s_imag, t) => {
+    let sum = 0;
+    for (let n = 1; n <= 30; n++) {
+      sum += Math.pow(n, -s_real) * Math.cos(-s_imag * Math.log(n) + t);
+    }
+    return sum * params.zeta_coupling;
+  };
+
+  const computeCouplingMatrix = (phi_k, phi_e, phi_m) => {
+    return {
+      k_from_e: params.g_ke * phi_e,
+      k_from_m: params.g_mk * phi_m,
+      e_from_k: params.g_ke * phi_k,
+      e_from_m: params.g_em * phi_m,
+      m_from_k: params.g_mk * phi_k,
+      m_from_e: params.g_em * phi_e
+    };
+  };
+
+  const computeEnergyDensity = (phi, dphi_dt) => {
+    return 0.5 * dphi_dt * dphi_dt + 0.5 * params.omega_0 * params.omega_0 * phi * phi;
+  };
+
+  const updateSimulation = () => {
+    const dt = 0.05;
+    const newTime = time + dt;
+    
+    const zetaData = zetaZeros.map((zero, i) => {
+      const contrib = zetaContribution(0.5, zero, newTime);
+      return {
+        mode: i + 1,
+        Im_s: zero.toFixed(2),
+        amplitude: contrib.toFixed(4),
+        phase: ((newTime * zero) % (2 * Math.PI)).toFixed(2)
+      };
+    });
+    setZetaContributions(zetaData);
+
+    const zeta_sum = zetaData.reduce((sum, z) => sum + parseFloat(z.amplitude), 0);
+    
+    const phi_k_val = computeRingField(newTime, params.phi_k, params.omega_0, 0, zeta_sum * 0.1);
+    const phi_e_val = computeRingField(newTime, params.phi_e, params.omega_0 * 1.1, Math.PI/3, zeta_sum * 0.15);
+    const phi_m_val = computeRingField(newTime, params.phi_m, params.omega_0 * 0.9, 2*Math.PI/3, zeta_sum * 0.12);
+    
+    const coupling = computeCouplingMatrix(phi_k_val, phi_e_val, phi_m_val);
+    
+    const newKinetic = [...ringStates.kinetic, { t: newTime.toFixed(2), value: phi_k_val }].slice(-50);
+    const newEM = [...ringStates.electromagnetic, { t: newTime.toFixed(2), value: phi_e_val }].slice(-50);
+    const newMass = [...ringStates.mass, { t: newTime.toFixed(2), value: phi_m_val }].slice(-50);
+    
+    setRingStates({
+      kinetic: newKinetic,
+      electromagnetic: newEM,
+      mass: newMass
+    });
+
+    const energyData = [
+      { ring: 'Kinetic', energy: computeEnergyDensity(phi_k_val, coupling.k_from_e + coupling.k_from_m) },
+      { ring: 'EM', energy: computeEnergyDensity(phi_e_val, coupling.e_from_k + coupling.e_from_m) },
+      { ring: 'Mass', energy: computeEnergyDensity(phi_m_val, coupling.m_from_k + coupling.m_from_e) }
+    ];
+    setEnergyFlow(energyData);
+
+    const newPhasePoint = {
+      phi_k: phi_k_val,
+      phi_e: phi_e_val,
+      phi_m: phi_m_val,
+      p_k: coupling.k_from_e + coupling.k_from_m,
+      p_e: coupling.e_from_k + coupling.e_from_m,
+      p_m: coupling.m_from_k + coupling.m_from_e
+    };
+    setPhaseSpace([...phaseSpace, newPhasePoint].slice(-100));
+
+    const spectrum = Array.from({length: 20}, (_, i) => {
+      const freq = (i + 1) * 0.5;
+      const response = Math.abs(1 / (Math.pow(params.omega_0 * params.omega_0 - freq * freq, 2) + Math.pow(2 * params.gamma * freq, 2)));
+      return {
+        frequency: freq.toFixed(2),
+        amplitude: response * 100
+      };
+    });
+    setResonanceSpectrum(spectrum);
+
+    setTime(newTime);
+  };
+
+  useEffect(() => {
+    if (running) {
+      animationRef.current = setInterval(updateSimulation, 50);
+    } else {
+      if (animationRef.current) {
+        clearInterval(animationRef.current);
+      }
+    }
+    return () => {
+      if (animationRef.current) {
+        clearInterval(animationRef.current);
+      }
+    };
+  }, [running, time, ringStates, params, phaseSpace]);
+
+  const reset = () => {
+    setTime(0);
+    setRingStates({ kinetic: [], electromagnetic: [], mass: [] });
+    setPhaseSpace([]);
+    setRunning(false);
+  };
+
+  const totalCoupling = params.g_ke + params.g_em + params.g_mk;
+  const resonanceQuality = params.omega_0 / (2 * params.gamma);
+
+  return (
+    <div className="w-full min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-purple-950 text-white p-4">
+      <div className="max-w-7xl mx-auto">
+        
+        <div className="text-center mb-6">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
+            Trinary Resonance Device
+          </h1>
+          <p className="text-slate-300 text-sm">
+            48D Quantum Field Theory Simulator with Zeta-Coupled Ring Dynamics
+          </p>
+        </div>
+
+        <div className="bg-slate-900/80 backdrop-blur rounded-lg p-6 mb-6 border border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setRunning(!running)}
+                className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+                  running ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                }`}
+              >
+                {running ? (
+                  <>
+                    <Pause className="w-5 h-5" />
+                    Pause
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    Start
+                  </>
+                )}
+              </button>
+              <button
+                onClick={reset}
+                className="px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 flex items-center gap-2"
+              >
+                <RotateCcw className="w-5 h-5" />
+                Reset
+              </button>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-mono font-bold text-cyan-400">{time.toFixed(2)}s</div>
+              <div className="text-xs text-slate-400">Simulation Time</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div>
+              <label className="text-xs text-slate-400">φ_k (Kinetic)</label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={params.phi_k}
+                onChange={(e) => setParams({...params, phi_k: parseFloat(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-xs text-center text-cyan-400 font-mono">{params.phi_k.toFixed(1)}</div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">φ_e (EM)</label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={params.phi_e}
+                onChange={(e) => setParams({...params, phi_e: parseFloat(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-xs text-center text-blue-400 font-mono">{params.phi_e.toFixed(1)}</div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">φ_m (Mass)</label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={params.phi_m}
+                onChange={(e) => setParams({...params, phi_m: parseFloat(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-xs text-center text-purple-400 font-mono">{params.phi_m.toFixed(1)}</div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">g_ke</label>
+              <input
+                type="range"
+                min="0"
+                max="0.5"
+                step="0.01"
+                value={params.g_ke}
+                onChange={(e) => setParams({...params, g_ke: parseFloat(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-xs text-center text-emerald-400 font-mono">{params.g_ke.toFixed(2)}</div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">ω_0</label>
+              <input
+                type="range"
+                min="0.1"
+                max="3"
+                step="0.1"
+                value={params.omega_0}
+                onChange={(e) => setParams({...params, omega_0: parseFloat(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-xs text-center text-yellow-400 font-mono">{params.omega_0.toFixed(1)}</div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">ζ Coupling</label>
+              <input
+                type="range"
+                min="0"
+                max="0.5"
+                step="0.01"
+                value={params.zeta_coupling}
+                onChange={(e) => setParams({...params, zeta_coupling: parseFloat(e.target.value)})}
+                className="w-full"
+              />
+              <div className="text-xs text-center text-pink-400 font-mono">{params.zeta_coupling.toFixed(2)}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-700">
+            <div className="text-center">
+              <div className="text-xs text-slate-400">Total Coupling</div>
+              <div className="text-lg font-bold text-emerald-400">{totalCoupling.toFixed(3)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-slate-400">Q Factor</div>
+              <div className="text-lg font-bold text-blue-400">{resonanceQuality.toFixed(1)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-slate-400">Zeta Modes</div>
+              <div className="text-lg font-bold text-purple-400">{zetaZeros.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+          {['overview', 'rings', 'zeta', 'energy', 'phase', 'spectrum'].map(view => (
+            <button
+              key={view}
+              onClick={() => setSelectedView(view)}
+              className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${
+                selectedView === view
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              {view.charAt(0).toUpperCase() + view.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {selectedView === 'overview' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg p-4 border border-slate-700">
+              <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                <Orbit className="w-5 h-5 text-cyan-400" />
+                Ring Field Dynamics
+              </h3>
+              <LineChart width={500} height={250} data={ringStates.kinetic} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="t" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
+                <Legend />
+                <Line type="monotone" data={ringStates.kinetic} dataKey="value" stroke="#06b6d4" name="φ_k" dot={false} strokeWidth={2} />
+                <Line type="monotone" data={ringStates.electromagnetic} dataKey="value" stroke="#3b82f6" name="φ_e" dot={false} strokeWidth={2} />
+                <Line type="monotone" data={ringStates.mass} dataKey="value" stroke="#a855f7" name="φ_m" dot={false} strokeWidth={2} />
+              </LineChart>
+            </div>
+
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg p-4 border border-slate-700">
+              <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-400" />
+                Energy Distribution
+              </h3>
+              <RadarChart width={500} height={250} data={energyFlow} margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
+                <PolarGrid stroke="#334155" />
+                <PolarAngleAxis dataKey="ring" stroke="#94a3b8" />
+                <PolarRadiusAxis stroke="#94a3b8" />
+                <Radar name="Energy" dataKey="energy" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.6} />
+              </RadarChart>
+            </div>
+
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg p-4 border border-slate-700">
+              <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                <Waves className="w-5 h-5 text-pink-400" />
+                Zeta Mode Amplitudes
+              </h3>
+              <div className="space-y-2">
+                {zetaContributions.map((z, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="text-xs text-slate-400 w-16">Im={z.Im_s}</div>
+                    <div className="flex-1 bg-slate-800 rounded-full h-6 overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-300"
+                        style={{ width: `${Math.abs(parseFloat(z.amplitude)) * 50}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-slate-300 font-mono w-16">{z.amplitude}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg p-4 border border-slate-700">
+              <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-green-400" />
+                Resonance Spectrum
+              </h3>
+              <AreaChart width={500} height={250} data={resonanceSpectrum} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="frequency" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
+                <Area type="monotone" dataKey="amplitude" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
+              </AreaChart>
+            </div>
+          </div>
+        )}
+
+        {selectedView === 'rings' && (
+          <div className="bg-slate-900/80 backdrop-blur rounded-lg p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4">Individual Ring Field Analysis</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div>
+                <h3 className="text-lg font-semibold text-cyan-400 mb-3">Kinetic Ring</h3>
+                <LineChart width={350} height={200} data={ringStates.kinetic}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="t" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+                  <Line type="monotone" dataKey="value" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                </LineChart>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-blue-400 mb-3">EM Ring</h3>
+                <LineChart width={350} height={200} data={ringStates.electromagnetic}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="t" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+                  <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                </LineChart>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-purple-400 mb-3">Mass Ring</h3>
+                <LineChart width={350} height={200} data={ringStates.mass}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="t" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+                  <Line type="monotone" dataKey="value" stroke="#a855f7" strokeWidth={2} dot={false} />
+                </LineChart>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedView === 'phase' && phaseSpace.length > 0 && (
+          <div className="bg-slate-900/80 backdrop-blur rounded-lg p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4">6D Phase Space Projection</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div>
+                <h3 className="text-sm font-semibold text-cyan-400 mb-2">φ_k vs p_k</h3>
+                <ScatterChart width={350} height={300} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis type="number" dataKey="phi_k" stroke="#94a3b8" />
+                  <YAxis type="number" dataKey="p_k" stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+                  <Scatter data={phaseSpace} fill="#06b6d4" />
+                </ScatterChart>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-blue-400 mb-2">φ_e vs p_e</h3>
+                <ScatterChart width={350} height={300} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis type="number" dataKey="phi_e" stroke="#94a3b8" />
+                  <YAxis type="number" dataKey="p_e" stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+                  <Scatter data={phaseSpace} fill="#3b82f6" />
+                </ScatterChart>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-purple-400 mb-2">φ_m vs p_m</h3>
+                <ScatterChart width={350} height={300} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis type="number" dataKey="phi_m" stroke="#94a3b8" />
+                  <YAxis type="number" dataKey="p_m" stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+                  <Scatter data={phaseSpace} fill="#a855f7" />
+                </ScatterChart>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedView === 'zeta' && (
+          <div className="bg-slate-900/80 backdrop-blur rounded-lg p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4">Riemann Zeta Zero Coupling</h2>
+            <div className="space-y-3">
+              {zetaContributions.map((z, i) => (
+                <div key={i} className="p-3 bg-slate-800 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-mono">Mode {z.mode}: ζ(½ + {z.Im_s}i)</span>
+                    <span className="text-sm font-bold text-pink-400">{z.amplitude}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-slate-400 w-16">Phase:</div>
+                    <div className="flex-1 bg-slate-700 rounded-full h-2">
+                      <div 
+                        className="h-full bg-pink-500 transition-all"
+                        style={{ width: `${(parseFloat(z.phase) / (2 * Math.PI)) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-mono w-16">{z.phase}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedView === 'energy' && (
+          <div className="bg-slate-900/80 backdrop-blur rounded-lg p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4">Energy Distribution</h2>
+            <div className="space-y-4">
+              {energyFlow.map((ring, i) => (
+                <div key={i} className="p-4 bg-slate-800 rounded-lg">
+                  <div className="flex justify-between mb-2">
+                    <span className="font-semibold">{ring.ring}</span>
+                    <span className="text-yellow-400 font-bold">{ring.energy.toFixed(4)}</span>
+                  </div>
+                  <div className="w-full bg-slate-700 rounded-full h-3">
+                    <div 
+                      className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 transition-all"
+                      style={{ width: `${Math.min(ring.energy * 10, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedView === 'spectrum' && (
+          <div className="bg-slate-900/80 backdrop-blur rounded-lg p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4">Resonance Spectrum</h2>
+            <AreaChart width={1100} height={400} data={resonanceSpectrum}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="frequency" stroke="#94a3b8" label={{ value: 'Frequency', position: 'insideBottom', offset: -5 }} />
+              <YAxis stroke="#94a3b8" label={{ value: 'Amplitude', angle: -90, position: 'insideLeft' }} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b' }} />
+              <Area type="monotone" dataKey="amplitude" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
+            </AreaChart>
+          </div>
+        )}
+
+        <div className="mt-6 bg-slate-900/80 backdrop-blur rounded-lg p-6 border border-slate-700">
+          <div className="flex items-center gap-2 mb-4">
+            <Info className="w-6 h-6 text-blue-400" />
+            <h3 className="text-xl font-bold">Theory Framework</h3>
+          </div>
+          <div className="text-sm text-slate-300 space-y-2">
+            <p>48D Topological Ring Dynamics with trinary field coupling and Riemann zeta zero resonances</p>
+            <p>Three ring fields (kinetic, electromagnetic, mass) coupled through g_ke, g_em, g_mk parameters</p>
+            <p>Zeta zero modes provide discrete spectral contributions at Re(s) = 1/2</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default TRDFullSimulator;
