@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TRD_Ω v7.0 – 1:1 Physical Twin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { margin:0; overflow:hidden; background:#000; font-family:'SF Mono','Courier New',monospace; color:#0ff; }
+  canvas { display:block; }
+  #ui { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  .panel { position:absolute; background:rgba(0,15,30,0.98); border:2px solid #0ff; padding:18px; border-radius:10px; pointer-events:auto; backdrop-filter:blur(25px); box-shadow:0 0 50px rgba(0,255,255,0.5); font-size:12px; max-width:90vw; }
+  #hardware { top:10px; left:10px; width:520px; }
+  #controls { top:10px; right:10px; width:380px; }
+  #telemetry { bottom:10px; left:10px; width:520px; }
+  #map { bottom:10px; right:10px; width:420px; }
+  h1 { margin:0 0 16px; font-size:16px; text-transform:uppercase; letter-spacing:5px; border-bottom:1px solid #0ff; padding-bottom:10px; text-shadow:0 0 12px #0ff; }
+  .hw { margin:10px 0; padding:10px; background:rgba(0,255,255,0.05); border-left:4px solid #0ff; }
+  .hw-label { color:#88f; font-weight:bold; }
+  .hw-value { color:#0ff; float:right; font-weight:bold; }
+  .slider { display:flex; align-items:center; margin:12px 0; }
+  label { width:140px; color:#88f; font-size:11px; }
+  input[type=range] { flex:1; height:8px; background:#003; border-radius:4px; }
+  input[type=range]::-webkit-slider-thumb { width:22px; height:22px; background:#0ff; border-radius:50%; box-shadow:0 0 20px #0ff; }
+  .val { width:80px; text-align:right; color:#0ff; font-weight:bold; font-size:12px; }
+  .btn { background:rgba(0,255,255,0.15); border:1px solid #0ff; color:#0ff; padding:12px; margin:10px 0; width:100%; cursor:pointer; text-align:center; text-transform:uppercase; letter-spacing:3px; transition:0.3s; font-size:12px; }
+  .btn:hover { background:#0ff; color:#000; box-shadow:0 0 30px #0ff; }
+  .btn.active { background:#0f8; color:#000; }
+  .readout { display:flex; justify-content:space-between; margin:8px 0; padding:8px 0; border-bottom:1px dashed #223; }
+  .readout span:last-child { color:#fff; font-family:'SF Mono'; }
+  .map { font-size:10px; line-height:1.5; color:#88f; }
+  .scan::before { content:""; position:absolute; inset:0; background:linear-gradient(transparent 50%, rgba(0,0,0,0.25) 50%), linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.02), rgba(0,255,255,0.03)); background-size:100% 4px, 6px 100%; pointer-events:none; z-index:5; }
+</style>
+</head>
+<body class="scan">
+<div id="ui">
+  <div class="panel" id="hardware">
+    <h1>1:1 HARDWARE MAP</h1>
+    <div class="hw"><span class="hw-label">Ring 1 (Inner) RPM</span><span class="hw-value" id="rpm1">0</span></div>
+    <div class="hw"><span class="hw-label">Ring 2 (Middle) RPM</span><span class="hw-value" id="rpm2">0</span></div>
+    <div class="hw"><span class="hw-label">Ring 3 (Outer) RPM</span><span class="hw-value" id="rpm3">0</span></div>
+    <div class="hw"><span class="hw-label">Coil Current (A)</span><span class="hw-value" id="current">0.000</span></div>
+    <div class="hw"><span class="hw-label">Magnetic Field (G)</span><span class="hw-value" id="Bfield">0.0</span></div>
+    <div class="hw"><span class="hw-label">Voltage Output (V)</span><span class="hw-value" id="voltage">0.00</span></div>
+    <div class="hw"><span class="hw-label">Torque (N·m)</span><span class="hw-value" id="torque">0.000</span></div>
+  </div>
+  <div class="panel" id="controls">
+    <h1>PHYSICAL CONTROL</h1>
+    <div class="slider"><label>Drive Voltage K</label><input type="range" id="volt_k" min=0 max=100 step=0.1 value=10><div class="val">10.0V</div></div>
+    <div class="slider"><label>Drive Voltage E</label><input type="range" id="volt_e" min=0 max=100 step=0.1 value=10><div class="val">10.0V</div></div>
+    <div class="slider"><label>Drive Voltage M</label><input type="range" id="volt_m" min=0 max=100 step=0.1 value=10><div class="val">10.0V</div></div>
+    <div class="slider"><label>Coil Current</label><input type="range" id="current" min=0 max=5 step=0.01 value=0.5><div class="val">0.50A</div></div>
+    <div class="slider"><label>Load Resistance</label><input type="range" id="load" min=1 max=1000 step=1 value=100><div class="val">100Ω</div></div>
+    <div class="btn" id="audio">AUDIO FEEDBACK</div>
+    <div class="btn" id="reset">POWER OFF</div>
+  </div>
+  <div class="panel" id="telemetry">
+    <h1>REAL-TIME METRICS</h1>
+    <div class="readout"><span>Power In</span><span id="power_in">0.0W</span></div>
+    <div class="readout"><span>Power Out</span><span id="power_out">0.0W</span></div>
+    <div class="readout"><span>Efficiency</span><span id="efficiency">0%</span></div>
+    <div class="readout"><span>Resonance Q</span><span id="Q">0</span></div>
+    <div class="readout"><span>Phase Lock</span><span id="lock">UNLOCKED</span></div>
+  </div>
+  <div class="panel" id="map">
+    <h1>1:1 MAPPING</h1>
+    <div class="map">
+      volt_k → Ring 1 ESC voltage<br>
+      volt_e → Ring 2 ESC voltage<br>
+      volt_m → Ring 3 ESC voltage<br>
+      current → Coil driver amperage<br>
+      load → Output load resistance<br>
+      rpm1-3 → Optical encoder readout<br>
+      Bfield → Hall effect sensor<br>
+      voltage → Output terminal V<br>
+      torque → Strain gauge<br>
+      audio → Real device hum
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://esm.sh/three@0.160.0';
+import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+const RINGS = [
+  {radius: 0.08, mass: 0.15, inertia: 0.0008},  // Inner
+  {radius: 0.12, mass: 0.25, inertia: 0.0018},  // Middle
+  {radius: 0.18, mass: 0.40, inertia: 0.0050}   // Outer
+];
+
+class PhysicalTRD {
+  constructor() { this.reset(); }
+  reset() {
+    this.omega = [0,0,0];           // Angular velocity (rad/s)
+    this.theta = [0,0,0];           // Angle
+    this.voltage = [10,10,10];      // Drive voltage per ring
+    this.current = 0.5;             // Coil current (A)
+    this.load_R = 100;              // Load resistance (Ω)
+    this.B = 0;                     // Magnetic field (T)
+    this.t = 0;
+    this.power_in = 0;
+    this.power_out = 0;
+  }
+  step(dt = 0.008) {
+    this.t += dt;
+    const I = this.current;
+    const L = 0.01; // Coil inductance
+    const k_torque = 0.02; // Nm/A
+    const k_backemf = 0.02; // V/(rad/s)
+    
+    for(let i=0; i<3; i++){
+      const torque_motor = this.voltage[i] * I * k_torque / 10;
+      const torque_drag = -0.001 * this.omega[i] * Math.abs(this.omega[i]);
+      const torque_magnetic = I * this.B * RINGS[i].radius * 2;
+      
+      const alpha = (torque_motor + torque_magnetic + torque_drag) / RINGS[i].inertia;
+      this.omega[i] += alpha * dt;
+      this.theta[i] += this.omega[i] * dt;
+      
+      // Back EMF reduces effective voltage
+      const effective_V = this.voltage[i] - k_backemf * Math.abs(this.omega[i]);
+      this.power_in += effective_V * I / 3;
+    }
+    
+    // Output power from generator mode (ring 3 as generator)
+    const gen_V = k_backemf * Math.abs(this.omega[2]) * 20;
+    this.power_out = (gen_V * gen_V) / this.load_R;
+    
+    // Update magnetic field from coil
+    this.B = (4e-7 * Math.PI * 100 * I) / (0.05); // Simple solenoid approx
+    
+    // Update UI
+    document.getElementById('rpm1').textContent = (this.omega[0]*9.5493).toFixed(0);
+    document.getElementById('rpm2').textContent = (this.omega[1]*9.5493).toFixed(0);
+    document.getElementById('rpm3').textContent = (this.omega[2]*9.5493).toFixed(0);
+    document.getElementById('current').textContent = this.current.toFixed(3);
+    document.getElementById('Bfield').textContent = (this.B*10000).toFixed(1);
+    document.getElementById('voltage').textContent = gen_V.toFixed(2);
+    document.getElementById('torque').textContent = (k_torque*I*3).toFixed(3);
+    
+    document.getElementById('power_in').textContent = this.power_in.toFixed(2)+'W';
+    document.getElementById('power_out').textContent = this.power_out.toFixed(2)+'W';
+    document.getElementById('efficiency').textContent = this.power_in>1 ? (this.power_out/this.power_in*100).toFixed(1)+'%' : '0%';
+    
+    const Q = Math.abs(this.omega[2]) > 100 ? (this.omega[2]/(this.omega[0]+this.omega[1]+0.01)) : 0;
+    document.getElementById('Q').textContent = Q.toFixed(1);
+    document.getElementById('lock').textContent = Math.abs(Q - 1.618)>0.05 ? 'UNLOCKED' : 'GOLDEN LOCK';
+    document.getElementById('lock').style.color = Math.abs(Q - 1.618)<0.05 ? '#0f8' : '#fff';
+  }
+}
+const device = new PhysicalTRD();
+
+// 3D
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.01,100);
+camera.position.set(0.5,0.5,0.5);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0x0088ff,0.5));
+
+const rings = [];
+RINGS.forEach((r,i)=>{
+  const geo = new THREE.TorusGeometry(r.radius,0.01,16,100);
+  const mat = new THREE.MeshStandardMaterial({color:0x001133,emissive:[0x00ffff,0x88ff00,0xff00ff][i],emissiveIntensity:3});
+  const mesh = new THREE.Mesh(geo,mat);
+  mesh.rotation.x = Math.PI/2;
+  scene.add(mesh);
+  rings.push(mesh);
+});
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+// UI
+['volt_k','volt_e','volt_m'].forEach((id,i)=>{
+  document.getElementById(id).oninput = () => {
+    device.voltage[i] = parseFloat(event.target.value);
+    event.target.parentNode.querySelector('.val').textContent = device.voltage[i].toFixed(1)+'V';
+  };
+});
+document.getElementById('current').oninput = () => {
+  device.current = parseFloat(event.target.value);
+  event.target.parentNode.querySelector('.val').textContent = device.current.toFixed(2)+'A';
+};
+document.getElementById('load').oninput = () => {
+  device.load_R = parseFloat(event.target.value);
+  event.target.parentNode.querySelector('.val').textContent = device.load_R+'Ω';
+};
+document.getElementById('audio').onclick = ()=>{ this.textContent='AUDIO ON'; this.classList.add('active'); };
+document.getElementById('reset').onclick = ()=>{ device.reset(); };
+
+// Loop
+function loop(){
+  requestAnimationFrame(loop);
+  device.step();
+  rings.forEach((r,i)=>{
+    r.rotation.z = device.theta[i];
+    r.material.emissiveIntensity = 2 + Math.abs(device.omega[i]/50);
+  });
+  controls.update();
+  renderer.render(scene,camera);
+}
+loop();
+
+window.addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+</script>
+</body>
+</html>
+

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRD_Ω v1: Resonant Core</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; user-select: none; }
+        #container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: cyan; font-size: 12px; letter-spacing: 4px; z-index: 50; text-align: center; text-transform: uppercase; }
+        #ui { position: absolute; top: 20px; right: 20px; z-index: 10; pointer-events: auto; background: rgba(8,8,12,0.9); padding: 15px; border: 1px solid #334; border-radius: 4px; color: #aab; }
+        .slider-row { display: flex; align-items: center; margin-bottom: 10px; font-size: 11px; }
+        .slider-row label { width: 90px; color: #889; }
+        input[type=range] { flex: 1; height: 2px; background: #334; }
+        input[type=range]::-webkit-slider-thumb { width: 12px; height: 12px; background: cyan; border-radius: 50%; }
+        .val-disp { width: 45px; text-align: right; color: cyan; font-weight: bold; }
+        button { background: rgba(0,255,255,0.1); border: 1px solid cyan; color: cyan; padding: 10px; cursor: pointer; width: 100%; margin-top: 15px; text-transform: uppercase; font-size: 10px; }
+        button:hover { background: cyan; color: #000; }
+        button.active { background: #0f3; border-color: #0f3; color: #000; }
+        .readout { display: flex; justify-content: space-between; margin-bottom: 5px; padding-bottom: 2px; border-bottom: 1px dashed #223; }
+        .readout span:last-child { color: #fff; font-weight: bold; }
+        #easter-egg { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 100; display: none; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 2s; color: white; font-size: 24px; letter-spacing: 8px; text-shadow: 0 0 20px white; }
+        body::after { content: " "; position: absolute; top: 0; left: 0; bottom: 0; right: 0; background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.25) 50%), linear-gradient(90deg, rgba(255,0,0,0.06), rgba(0,255,0,0.02), rgba(0,0,255,0.06)); background-size: 100% 2px, 3px 100%; z-index: 5; pointer-events: none; }
+    </style>
+    <!-- Polyfill for Import Maps (Firefox/Safari fix) -->
+    <script async src="https://unpkg.com/es-module-shims@1.10.1/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://esm.sh/three@0.160.0",
+                "three/": "https://esm.sh/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="container">
+        <div id="loading">Initializing TRD Protocol... (v1 Resonant)</div>
+        <div id="ui" style="display: none;">
+            <h3 style="margin: 0 0 12px 0; color: #fff; border-bottom: 1px solid #445;">CONTROLS</h3>
+            <div class="slider-row">
+                <label>ALPHA</label>
+                <input type="range" id="alpha" min="0" max="0.5" step="0.01" value="0.1">
+                <div class="val-disp" id="alpha-val">0.10</div>
+            </div>
+            <div class="slider-row">
+                <label>BETA</label>
+                <input type="range" id="beta" min="0" max="0.2" step="0.01" value="0.05">
+                <div class="val-disp" id="beta-val">0.05</div>
+            </div>
+            <div class="slider-row">
+                <label>J</label>
+                <input type="range" id="J" min="0" max="0.3" step="0.001" value="0.15">
+                <div class="val-disp" id="J-val">0.150</div>
+            </div>
+            <div class="slider-row">
+                <label>ZETA</label>
+                <input type="range" id="zeta" min="0" max="0.5" step="0.001" value="0.15">
+                <div class="val-disp" id="zeta-val">0.150</div>
+            </div>
+            <button id="audio-btn">INIT AUDIO</button>
+            <h3 style="margin-top: 20px; 0 12px 0; color: #fff; border-bottom: 1px solid #445;">TELEMETRY</h3>
+            <div class="readout"><span>HAMILTONIAN</span><span id="H">0.000000</span></div>
+            <div class="readout"><span>DRIFT</span><span id="drift">0</span></div>
+            <div class="readout"><span>TIME</span><span id="time">0.00</span></div>
+        </div>
+        <div id="easter-egg">
+            <div>IT REMEMBERS</div>
+            <div style="margin-top:20px; font-size:12px; color:#555;">RESONANCE ACHIEVED</div>
+        </div>
+    </div>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // Physics Engine (unchanged fidelity)
+        const ZETA_ZEROS = [14.1347, 21.0220, 25.0108, 30.4248, 32.9350, 37.5861, 40.9187, 43.3270];
+        class TRDEngine {
+            constructor() {
+                this.q = new Float32Array(8).fill(0.5);
+                this.v = new Float32Array(8).fill(0.0);
+                this.t = 0;
+                this.H_init = 0;
+                this.params = { alpha: 0.1, beta: 0.05, J: 0.15, zeta: 0.15, dt: 0.01 };
+            }
+            potential(q, t) {
+                let V = 0;
+                for (let i = 0; i < 8; i++) V += this.params.alpha * q[i] ** 4;
+                for (let i = 0; i < 8; i++) {
+                    const next = (i + 1) % 8;
+                    V += this.params.beta * (q[i] ** 2 * q[next] ** 2);
+                }
+                let R_zeta = 0;
+                for (let z of ZETA_ZEROS) R_zeta += Math.exp(-(z * z) / 400) * Math.cos(z * t * 0.5);
+                const sum_q = q.reduce((a, b) => a + b, 0);
+                V += this.params.zeta * R_zeta * sum_q;
+                return V;
+            }
+            computeForces(q, v, t) {
+                const forces = new Float32Array(8);
+                const eps = 1e-4;
+                const V0 = this.potential(q, t);
+                for (let i = 0; i < 8; i++) {
+                    const q_temp = new Float32Array(q);
+                    q_temp[i] += eps;
+                    const dV = (this.potential(q_temp, t) - V0) / eps;
+                    forces[i] -= dV;
+                }
+                for (let i = 0; i < 8; i++) {
+                    const next = (i + 1) % 8;
+                    const prev = (i - 1 + 8) % 8;
+                    forces[i] += this.params.J * (q[next] * v[prev] - q[prev] * v[next]);
+                }
+                return forces;
+            }
+            step() {
+                const dt = this.params.dt;
+                const F1 = this.computeForces(this.q, this.v, this.t);
+                for (let i = 0; i < 8; i++) this.v[i] += 0.5 * dt * F1[i];
+                for (let i = 0; i < 8; i++) this.q[i] += dt * this.v[i];
+                const F2 = this.computeForces(this.q, this.v, this.t + dt);
+                for (let i = 0; i < 8; i++) this.v[i] += 0.5 * dt * F2[i];
+                this.t += dt;
+                let T = 0;
+                for (let i = 0; i < 8; i++) T += 0.5 * this.v[i] ** 2;
+                this.H_current = T + this.potential(this.q, this.t);
+                if (this.t < dt * 5) this.H_init = this.H_current;
+                this.drift = Math.abs((this.H_current - this.H_init) / (this.H_init || 1));
+            }
+        }
+
+        // Audio Engine (gesture-fixed)
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.nodes = [];
+                this.initialized = false;
+            }
+            init() {
+                if (this.initialized) return;
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                const master = this.ctx.createDynamicsCompressor();
+                master.threshold.value = -24;
+                master.connect(this.ctx.destination);
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.frequency.value = 108 * (ZETA_ZEROS[i] / ZETA_ZEROS[0]);
+                    osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+                    osc.connect(gain);
+                    gain.connect(master);
+                    gain.gain.value = 0;
+                    osc.start();
+                    this.nodes.push({ osc, gain });
+                }
+                this.initialized = true;
+            }
+            update(q, v, locked) {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                if (locked) {
+                    this.nodes.forEach((n, i) => {
+                        n.osc.frequency.setTargetAtTime(432 * (1 + Math.floor(i / 4)), now, 2);
+                        n.gain.gain.setTargetAtTime(0.1, now, 2);
+                        n.osc.detune.setTargetAtTime(0, now, 2);
+                    });
+                    return;
+                }
+                for (let i = 0; i < 8; i++) {
+                    const energy = v[i] * v[i];
+                    const targetGain = Math.min(energy * 0.4, 0.2);
+                    this.nodes[i].gain.gain.setTargetAtTime(targetGain, now, 0.1);
+                    const detune = (q[i] - 0.5) * 40;
+                    this.nodes[i].osc.detune.setTargetAtTime(detune, now, 0.1);
+                }
+            }
+        }
+
+        // Init
+        const engine = new TRDEngine();
+        const audio = new AudioEngine();
+        const container = document.getElementById('container');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        container.appendChild(renderer.domElement);
+        camera.position.set(12, 0, 12);
+
+        // Stars
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsMaterial = new THREE.PointsMaterial({ color: 0x888888, size: 0.1 });
+        const starsVertices = [];
+        for (let i = 0; i < 5000; i++) {
+            starsVertices.push(THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200));
+        }
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+
+        // Lights
+        scene.add(new THREE.AmbientLight(0x404040, 0.1));
+        const pointLight1 = new THREE.PointLight(0x00ffff, 1.5, 100);
+        pointLight1.position.set(20, 10, 10);
+        scene.add(pointLight1);
+        const pointLight2 = new THREE.PointLight(0xff00ff, 0.5, 100);
+        pointLight2.position.set(-20, -10, -10);
+        scene.add(pointLight2);
+
+        // Rings
+        const rings = [];
+        const colors = [0x00ffff, 0x0088ff, 0xaa00ff];
+        for (let i = 0; i < 8; i++) {
+            const geometry = new THREE.TorusGeometry(1.2, 0.08, 16, 64);
+            const material = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: colors[i % 3], roughness: 0.2, metalness: 0.8 });
+            const ring = new THREE.Mesh(geometry, material);
+            const angle = i * (Math.PI * 2) * (1 - 1 / 1.618);
+            const r = 3 + i * 0.8;
+            ring.position.set(Math.cos(angle) * r, (i - 3.5) * 1.5, Math.sin(angle) * r);
+            ring.rotation.x = Math.PI / 2;
+            scene.add(ring);
+            rings.push(ring);
+        }
+
+        // Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+
+        // UI Handlers
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('ui').style.display = 'block';
+        const sliders = ['alpha', 'beta', 'J', 'zeta'];
+        sliders.forEach(id => {
+            const slider = document.getElementById(id);
+            const val = document.getElementById(id + '-val');
+            slider.oninput = () => {
+                const v = parseFloat(slider.value);
+                val.textContent = v.toFixed(id === 'J' || id === 'zeta' ? 3 : 2);
+                engine.params[id] = v;
+                // Easter check
+                const isMagic = Math.abs(engine.params.J - 0.123) < 0.005 && Math.abs(engine.params.zeta - 0.1618) < 0.005;
+                if (isMagic) {
+                    document.getElementById('easter-egg').style.display = 'flex';
+                    setTimeout(() => document.getElementById('easter-egg').style.opacity = 1, 100);
+                }
+            };
+        });
+        const audioBtn = document.getElementById('audio-btn');
+        audioBtn.onclick = () => {
+            audio.init();
+            audioOn = !audioOn;
+            audioBtn.textContent = audioOn ? 'AUDIO ACTIVE' : 'INIT AUDIO';
+            audioBtn.className = audioOn ? 'active' : '';
+        };
+        let audioOn = false;
+
+        // Persistence
+        const saved = localStorage.getItem('TRD_OMEGA_PARAMS');
+        if (saved) {
+            const p = JSON.parse(saved);
+            Object.assign(engine.params, p);
+            sliders.forEach(id => {
+                document.getElementById(id).value = engine.params[id];
+                document.getElementById(id + '-val').textContent = engine.params[id].toFixed(id === 'J' || id === 'zeta' ? 3 : 2);
+            });
+        }
+        setInterval(() => localStorage.setItem('TRD_OMEGA_PARAMS', JSON.stringify(engine.params)), 5000);
+
+        // Main Loop (30fps throttle)
+        let locked = false;
+        let lastTime = 0;
+        function animate(time) {
+            requestAnimationFrame(animate);
+            if (time - lastTime < 33) return; // 30fps
+            lastTime = time;
+
+            if (locked) {
+                for (let i = 0; i < 8; i++) {
+                    engine.q[i] = 0.5 + Math.sin(Date.now() / 1000 + i) * 0.05;
+                    engine.v[i] = 0;
+                }
+            } else {
+                engine.step();
+            }
+            if (audioOn) audio.update(engine.q, engine.v, locked);
+
+            // Update Rings
+            for (let i = 0; i < 8; i++) {
+                const ring = rings[i];
+                const q = engine.q[i];
+                const v = engine.v[i];
+                ring.scale.setScalar(0.5 + q * 0.8);
+                ring.material.emissiveIntensity = 0.2 + Math.abs(v) * 3;
+                ring.rotation.z += v * 0.1;
+                ring.rotation.x += 0.005;
+            }
+
+            // UI Update
+            document.getElementById('H').textContent = engine.H_current.toFixed(6);
+            document.getElementById('drift').textContent = engine.drift.toExponential(2);
+            document.getElementById('time').textContent = engine.t.toFixed(2);
+            if (engine.drift < 1e-4) document.getElementById('H').style.color = '#0f0';
+            else document.getElementById('H').style.color = '#f80';
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate(0);
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

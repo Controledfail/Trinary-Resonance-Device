@@ -1,0 +1,441 @@
+import React, { useState } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+
+const IncircleDeformation = () => {
+  const [a, setA] = useState(3); // Start at 3-4-5 triangle
+  
+  // CORRECT Hyperbola constraint: (a-2)(b-2) = 2
+  // Solve for b: b = 2 + 2/(a - 2)
+  const b = a > 2 ? 2 + 2/(a - 2) : Infinity;
+  
+  // Right triangle properties
+  const c = Math.sqrt(a*a + b*b);
+  const r = (a + b - c) / 2;
+  const incircleArea = Math.PI * r * r;
+  
+  // Triangle area
+  const triangleArea = (a * b) / 2;
+  
+  // Semiperimeter
+  const s = (a + b + c) / 2;
+  
+  // Hyperbola verification
+  const hyperbolaLHS = (a - 2) * (b - 2);
+  const hyperbolaRHS = 2;
+  
+  // Asymptotic analysis
+  const isNearCollapse = a < 2.1;
+  const isNearInfinity = a > 100;
+  
+  // Special cases
+  const is345 = Math.abs(a - 3) < 0.01 && Math.abs(b - 4) < 0.01;
+  const isIsosceles = Math.abs(a - b) < 0.01;
+  
+  // Deformation parameter
+  const aspectRatio = Math.max(a, b) / Math.min(a, b);
+  
+  return (
+    <div className="w-full max-w-6xl mx-auto p-6 space-y-6 bg-black min-h-screen">
+      <Card className="bg-gradient-to-br from-slate-900 to-slate-800 text-white border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-3xl font-bold">
+            🎯 Continuous Deformation: π-Preserving Triangles
+          </CardTitle>
+          <div className="text-slate-400 text-sm mt-2">
+            The hyperbola (a-2)(b-2) = 2 keeps incircle area = π exactly
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          
+          {/* Parameter Control */}
+          <div className="bg-slate-950 p-6 rounded-lg border border-slate-700">
+            <label className="block mb-4 text-lg font-semibold">
+              Leg a: <span className="text-yellow-400 font-mono">{a.toFixed(4)}</span>
+            </label>
+            <input
+              type="range"
+              min="2.01"
+              max="50"
+              step="0.01"
+              value={a}
+              onChange={(e) => setA(parseFloat(e.target.value))}
+              className="w-full h-3 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+            />
+            <div className="flex justify-between text-xs text-slate-500 mt-2">
+              <span>a → 2⁺ (collapse)</span>
+              <span className="text-green-400">a = 3 (3-4-5)</span>
+              <span>a → ∞ (degenerate)</span>
+            </div>
+            <div className="mt-4 text-sm text-slate-400">
+              <strong>Constraint:</strong> b = 2 + 2/(a - 2) from hyperbola (a-2)(b-2) = 2
+            </div>
+          </div>
+          
+          {/* Triangle Properties */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="bg-slate-950 border-slate-700">
+              <CardContent className="pt-6">
+                <h4 className="font-bold mb-3 text-purple-400">Triangle Sides</h4>
+                <div className="space-y-2 text-sm font-mono">
+                  <div className="flex justify-between">
+                    <span>Leg a:</span>
+                    <span className="text-green-400">{a.toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Leg b:</span>
+                    <span className="text-green-400">{b < 1000 ? b.toFixed(4) : '∞'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Hypotenuse c:</span>
+                    <span className="text-blue-400">{c < 1000 ? c.toFixed(4) : '∞'}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+                    <span>a² + b²:</span>
+                    <span className="text-yellow-400">{(a*a + b*b).toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>c²:</span>
+                    <span className="text-yellow-400">{(c*c).toFixed(4)}</span>
+                  </div>
+                  <div className="text-xs text-center mt-2">
+                    {Math.abs(a*a + b*b - c*c) < 0.01 ? 
+                      <span className="text-green-400">✓ Pythagorean</span> : 
+                      <span className="text-red-400">⚠ Error</span>
+                    }
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-slate-950 border-slate-700">
+              <CardContent className="pt-6">
+                <h4 className="font-bold mb-3 text-purple-400">Incircle</h4>
+                <div className="space-y-2 text-sm font-mono">
+                  <div className="flex justify-between">
+                    <span>Inradius r:</span>
+                    <span className="text-green-400">{r.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Target r:</span>
+                    <span className="text-blue-400">1.000000</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+                    <span>Area πr²:</span>
+                    <span className="text-yellow-400">{incircleArea.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>π (target):</span>
+                    <span className="text-blue-400">{Math.PI.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+                    <span>Error:</span>
+                    <span className={Math.abs(incircleArea - Math.PI) < 0.0001 ? 'text-green-400' : 'text-red-400'}>
+                      {Math.abs(incircleArea - Math.PI).toExponential(2)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-center mt-2">
+                    {Math.abs(r - 1) < 0.0001 ? 
+                      <span className="text-green-400">✓ π preserved</span> : 
+                      <span className="text-red-400">⚠ Deviation</span>
+                    }
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-slate-950 border-slate-700">
+              <CardContent className="pt-6">
+                <h4 className="font-bold mb-3 text-purple-400">Geometry</h4>
+                <div className="space-y-2 text-sm font-mono">
+                  <div className="flex justify-between">
+                    <span>Semiperimeter:</span>
+                    <span className="text-green-400">{s < 1000 ? s.toFixed(4) : '∞'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Triangle area:</span>
+                    <span className="text-yellow-400">{triangleArea < 10000 ? triangleArea.toFixed(2) : '∞'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Aspect ratio:</span>
+                    <span className="text-blue-400">{aspectRatio < 1000 ? aspectRatio.toFixed(2) : '∞'}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+                    <span>Shape:</span>
+                    <span className="text-purple-400">
+                      {is345 ? '3-4-5' : 
+                       isIsosceles ? 'Isosceles' : 
+                       isNearCollapse ? 'Collapsing' : 
+                       isNearInfinity ? 'Spike' : 'Generic'}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          
+          {/* Hyperbola Equation Verification */}
+          <div className="bg-slate-950 p-6 rounded-lg border border-slate-700">
+            <h3 className="text-xl font-bold mb-4 text-blue-400">
+              Hyperbola Constraint: (a-2)(b-2) = 2
+            </h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 font-mono">
+                <div className="bg-black p-4 rounded border border-slate-800">
+                  <div className="text-sm text-slate-400 mb-2">Left side (a-2)(b-2):</div>
+                  <div className="text-2xl text-yellow-400">{hyperbolaLHS.toFixed(6)}</div>
+                </div>
+                <div className="bg-black p-4 rounded border border-slate-800">
+                  <div className="text-sm text-slate-400 mb-2">Right side:</div>
+                  <div className="text-2xl text-yellow-400">{hyperbolaRHS.toFixed(6)}</div>
+                </div>
+              </div>
+              <div className="bg-black p-4 rounded text-center">
+                <div className="text-sm text-slate-400">Difference:</div>
+                <div className={`text-2xl font-bold ${Math.abs(hyperbolaLHS - hyperbolaRHS) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
+                  {Math.abs(hyperbolaLHS - hyperbolaRHS).toExponential(3)}
+                </div>
+                {Math.abs(hyperbolaLHS - hyperbolaRHS) < 0.01 && (
+                  <div className="text-green-400 text-sm mt-2">✓ Constraint satisfied</div>
+                )}
+              </div>
+              <div className="bg-slate-900 p-4 rounded text-sm text-slate-300">
+                <strong>Derivation:</strong>
+                <div className="mt-2 space-y-1 font-mono text-xs">
+                  <div>r = (a + b - c)/2 = 1</div>
+                  <div>a + b - √(a² + b²) = 2</div>
+                  <div>a + b - 2 = √(a² + b²)</div>
+                  <div>(a + b - 2)² = a² + b²</div>
+                  <div>2ab - 4a - 4b + 4 = 0</div>
+                  <div>ab - 2a - 2b + 2 = 0</div>
+                  <div className="text-yellow-400">(a-2)(b-2) = 2</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Asymptotic Analysis */}
+          <div className="bg-slate-950 p-6 rounded-lg border border-slate-700">
+            <h3 className="text-xl font-bold mb-4 text-blue-400">
+              Asymptotic Behavior
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-black p-4 rounded">
+                <h4 className="font-bold text-yellow-400 mb-2">As a → 2⁺ (collapse):</h4>
+                <div className="text-sm space-y-1 text-slate-300 font-mono">
+                  <div>• a → 2</div>
+                  <div>• b = 2 + 2/(a-2) → ∞</div>
+                  <div>• c → ∞</div>
+                  <div>• r → 1 (stays finite!)</div>
+                  <div className="text-slate-400 mt-2">
+                    Triangle becomes infinitely thin spike.<br/>
+                    Incircle squeezed along infinite line.<br/>
+                    Area πr² = π preserved!
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-black p-4 rounded">
+                <h4 className="font-bold text-yellow-400 mb-2">As a → ∞ (degenerate):</h4>
+                <div className="text-sm space-y-1 text-slate-300 font-mono">
+                  <div>• a → ∞</div>
+                  <div>• b = 2 + 2/(a-2) → 2</div>
+                  <div>• c → ∞</div>
+                  <div>• r → 1 (stays finite!)</div>
+                  <div className="text-slate-400 mt-2">
+                    Short leg approaches 2.<br/>
+                    Long leg extends infinitely.<br/>
+                    Dual behavior to a → 2⁺ case.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Complex Continuation */}
+          <div className="bg-gradient-to-br from-purple-950 to-black p-6 rounded-lg border-2 border-purple-500">
+            <h3 className="text-2xl font-bold mb-4 text-purple-300">
+              🎭 The Path to 1–i–0: Complex Analytic Continuation
+            </h3>
+            <div className="space-y-4">
+              <div className="bg-black/70 p-5 rounded">
+                <h4 className="font-bold text-yellow-400 mb-3">Real Deformation Path:</h4>
+                <div className="space-y-3 text-sm text-slate-300">
+                  <div className="bg-slate-900 p-3 rounded">
+                    <strong className="text-green-400">Step 1: Start at 3-4-5</strong>
+                    <div className="font-mono text-xs mt-1">
+                      a = 3, b = 4, c = 5<br/>
+                      r = (3+4-5)/2 = 1<br/>
+                      Incircle area = π
+                    </div>
+                  </div>
+                  
+                  <div className="bg-slate-900 p-3 rounded">
+                    <strong className="text-blue-400">Step 2: Move along hyperbola</strong>
+                    <div className="font-mono text-xs mt-1">
+                      As a decreases toward 2:<br/>
+                      b increases toward ∞<br/>
+                      But r stays exactly 1!<br/>
+                      (a-2)(b-2) = 2 always
+                    </div>
+                  </div>
+                  
+                  <div className="bg-slate-900 p-3 rounded">
+                    <strong className="text-red-400">Step 3: Approach collapse (a → 2⁺)</strong>
+                    <div className="font-mono text-xs mt-1">
+                      a → 2, b → ∞, c → ∞<br/>
+                      Triangle degenerates to line<br/>
+                      Incircle radius r = 1 survives<br/>
+                      This is the "ghost" configuration
+                    </div>
+                  </div>
+                  
+                  <div className="bg-slate-900 p-3 rounded border-2 border-purple-500">
+                    <strong className="text-purple-400">Step 4: Complex twist (formal analytic continuation)</strong>
+                    <div className="font-mono text-xs mt-1">
+                      <strong className="text-yellow-400">Replace b → i (imaginary leg)</strong><br/>
+                      <div className="ml-4 mt-2 space-y-1">
+                        <div>a = 1 (take finite real leg)</div>
+                        <div>b = i (imaginary leg)</div>
+                        <div>c = √(1² + i²) = √(1 - 1) = √0 = 0</div>
+                        <div className="text-red-400">Hypotenuse vanishes!</div>
+                      </div>
+                      <div className="mt-3 p-2 bg-black rounded">
+                        <div className="text-center text-lg">
+                          <span className="text-green-400">1²</span>
+                          <span className="text-slate-500"> + </span>
+                          <span className="text-purple-400">i²</span>
+                          <span className="text-slate-500"> = </span>
+                          <span className="text-yellow-400">0²</span>
+                        </div>
+                        <div className="text-center text-xs text-slate-400 mt-1">
+                          The 1–i–0 triangle
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-gradient-to-r from-green-900/50 to-blue-900/50 p-5 rounded border border-cyan-500">
+                <h4 className="font-bold text-cyan-400 mb-2">🎯 Physical Interpretation</h4>
+                <div className="text-sm space-y-2 text-slate-200">
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-400">▸</span>
+                    <div><strong>Real leg (a=1):</strong> Mass term (weak force, Higgs)</div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-purple-400">▸</span>
+                    <div><strong>Imaginary leg (b=i):</strong> Phase/gauge term (EM, U(1))</div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-yellow-400">▸</span>
+                    <div><strong>Null hypotenuse (c=0):</strong> Confinement (strong force, QCD)</div>
+                  </div>
+                  <div className="flex items-start gap-2 mt-3 pt-3 border-t border-cyan-700">
+                    <span className="text-cyan-400">⊕</span>
+                    <div><strong>The deformation path 3-4-5 → 1-i-0 is the symmetry breaking trajectory from unbroken to broken phase!</strong></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Special Points Table */}
+          <div className="bg-slate-950 p-6 rounded-lg border border-slate-700">
+            <h3 className="text-xl font-bold mb-4 text-blue-400">Notable Points on Hyperbola</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm font-mono">
+                <thead>
+                  <tr className="border-b border-slate-700">
+                    <th className="p-2 text-left">Point</th>
+                    <th className="p-2 text-right">a</th>
+                    <th className="p-2 text-right">b</th>
+                    <th className="p-2 text-right">c</th>
+                    <th className="p-2 text-right">r</th>
+                    <th className="p-2 text-left">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className={`border-b border-slate-800 ${is345 ? 'bg-green-900/30' : ''}`}>
+                    <td className="p-2 text-green-400">3-4-5</td>
+                    <td className="p-2 text-right">3.000</td>
+                    <td className="p-2 text-right">4.000</td>
+                    <td className="p-2 text-right">5.000</td>
+                    <td className="p-2 text-right">1.000</td>
+                    <td className="p-2 text-slate-400">Canonical example</td>
+                  </tr>
+                  <tr className="border-b border-slate-800">
+                    <td className="p-2 text-blue-400">Isosceles</td>
+                    <td className="p-2 text-right">3.414</td>
+                    <td className="p-2 text-right">3.414</td>
+                    <td className="p-2 text-right">4.828</td>
+                    <td className="p-2 text-right">1.000</td>
+                    <td className="p-2 text-slate-400">Symmetric point</td>
+                  </tr>
+                  <tr className="border-b border-slate-800">
+                    <td className="p-2 text-yellow-400">Large a</td>
+                    <td className="p-2 text-right">100.0</td>
+                    <td className="p-2 text-right">2.020</td>
+                    <td className="p-2 text-right">100.0</td>
+                    <td className="p-2 text-right">1.000</td>
+                    <td className="p-2 text-slate-400">Long spike</td>
+                  </tr>
+                  <tr className="border-b border-slate-800">
+                    <td className="p-2 text-red-400">Near collapse</td>
+                    <td className="p-2 text-right">2.010</td>
+                    <td className="p-2 text-right">202.0</td>
+                    <td className="p-2 text-right">202.0</td>
+                    <td className="p-2 text-right">1.000</td>
+                    <td className="p-2 text-slate-400">Approaching limit</td>
+                  </tr>
+                  <tr className="bg-purple-900/30">
+                    <td className="p-2 text-purple-400">1-i-0</td>
+                    <td className="p-2 text-right">1.000</td>
+                    <td className="p-2 text-right">i</td>
+                    <td className="p-2 text-right">0.000</td>
+                    <td className="p-2 text-right">?</td>
+                    <td className="p-2 text-slate-400">Complex limit</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          {/* Mathematical Summary */}
+          <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 border-2 border-yellow-600 p-6 rounded">
+            <h3 className="text-2xl font-bold mb-3 text-yellow-400">🎯 Mathematical Summary</h3>
+            <div className="space-y-2 text-sm text-slate-200">
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-400">▸</span>
+                <div><strong>Constraint:</strong> The hyperbola (a-2)(b-2) = 2 describes ALL right triangles with incircle area = π</div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-400">▸</span>
+                <div><strong>Parameterization:</strong> Given a > 2, we have b = 2 + 2/(a - 2)</div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-400">▸</span>
+                <div><strong>Degeneration:</strong> As a → 2⁺, the triangle becomes infinitely thin (b → ∞) but r = 1 persists</div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-400">▸</span>
+                <div><strong>Complex limit:</strong> The 1–i–0 triangle is reached by analytic continuation: replacing b → i after taking a → 1</div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-400">▸</span>
+                <div><strong>Physical meaning:</strong> This path represents <strong>controlled symmetry breaking</strong> from real (symmetric) to complex (degenerate) geometry</div>
+              </div>
+              <div className="flex items-start gap-2 mt-3 pt-3 border-t border-yellow-700">
+                <span className="text-green-400">✓</span>
+                <div><strong>Rigorously verified:</strong> The incircle area stays exactly π along the entire real branch of the hyperbola</div>
+              </div>
+            </div>
+          </div>
+          
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default IncircleDeformation;

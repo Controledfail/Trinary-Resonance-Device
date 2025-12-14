@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TRD_Ω v5.0 – Lagrangian Control Interface</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { margin:0; overflow:hidden; background:#000; font-family:'SF Mono','Courier New',monospace; color:#0ff; }
+  canvas { display:block; }
+  #ui { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  .panel { position:absolute; background:rgba(0,15,30,0.96); border:2px solid #0ff; padding:16px; border-radius:8px; pointer-events:auto; backdrop-filter:blur(20px); box-shadow:0 0 40px rgba(0,255,255,0.4); font-size:12px; max-width:90vw; }
+  #lagrangian { top:10px; left:10px; width:460px; }
+  #controls { top:10px; right:10px; width:340px; }
+  #telemetry { bottom:10px; left:10px; width:460px; }
+  h1 { margin:0 0 14px; font-size:15px; text-transform:uppercase; letter-spacing:4px; border-bottom:1px solid #0ff; padding-bottom:8px; text-shadow:0 0 10px #0ff; }
+  .term { margin:8px 0; padding:8px; background:rgba(0,255,255,0.05); border-left:3px solid #0ff; font-family:'SF Mono',monospace; }
+  .term-label { color:#88f; font-weight:bold; }
+  .term-value { color:#0ff; float:right; font-weight:bold; }
+  .slider { display:flex; align-items:center; margin:10px 0; }
+  label { width:110px; color:#88f; font-size:11px; }
+  input[type=range] { flex:1; height:6px; background:#003; border-radius:3px; }
+  input[type=range]::-webkit-slider-thumb { width:18px; height:18px; background:#0ff; border-radius:50%; box-shadow:0 0 15px #0ff; }
+  .val { width:70px; text-align:right; color:#0ff; font-weight:bold; font-size:11px; }
+  .btn { background:rgba(0,255,255,0.15); border:1px solid #0ff; color:#0ff; padding:10px; margin:8px 0; width:100%; cursor:pointer; text-align:center; text-transform:uppercase; letter-spacing:2px; transition:0.3s; font-size:11px; }
+  .btn:hover { background:#0ff; color:#000; box-shadow:0 0 25px #0ff; }
+  .btn.active { background:#0f8; color:#000; }
+  .readout { display:flex; justify-content:space-between; margin:6px 0; padding:6px 0; border-bottom:1px dashed #223; }
+  .readout span:last-child { color:#fff; font-family:'SF Mono'; }
+  .scan::before { content:""; position:absolute; inset:0; background:linear-gradient(transparent 50%, rgba(0,0,0,0.25) 50%), linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.02), rgba(0,255,255,0.03)); background-size:100% 4px, 6px 100%; pointer-events:none; z-index:5; }
+</style>
+</head>
+<body class="scan">
+<div id="ui">
+  <div class="panel" id="lagrangian">
+    <h1>LAGRANGIAN ℒ</h1>
+    <div class="term"><span class="term-label">Kinetic T</span><span class="term-value" id="T">0.000</span></div>
+    <div class="term"><span class="term-label">−α Σ qᵢ⁴</span><span class="term-value" id="Vself">0.000</span></div>
+    <div class="term"><span class="term-label">−β Σ qᵢ²qᵢ₊₁²</span><span class="term-value" id="Vmix">0.000</span></div>
+    <div class="term"><span class="term-label">−J Σ (qᵢ₊₁ṗᵢ₋₁ − qᵢ₋₁ṗᵢ₊₁)</span><span class="term-value" id="Vflux">0.000</span></div>
+    <div class="term"><span class="term-label">−ζ(t) Σ qᵢ</span><span class="term-value" id="Vzeta">0.000</span></div>
+    <div style="margin-top:12px; padding-top:12px; border-top:1px solid #0ff; font-size:14px;">
+      <strong>ℒ = </strong><span id="totalL">0.000</span>
+    </div>
+  </div>
+  <div class="panel" id="controls">
+    <h1>CONTROL SURFACE</h1>
+    <div class="slider"><label>α Stiffness</label><input type="range" id="alpha" min=0 max=0.5 step=0.001 value=0.1><div class="val">0.100</div></div>
+    <div class="slider"><label>β Mixing</label><input type="range" id="beta" min=0 max=0.3 step=0.001 value=0.05><div class="val">0.050</div></div>
+    <div class="slider"><label>J Flux</label><input type="range" id="J" min=0 max=0.4 step=0.0001 value=0.1500><div class="val">0.1500</div></div>
+    <div class="slider"><label>ζ Drive</label><input type="range" id="zeta" min=0 max=1 step=0.0001 value=0.1500><div class="val">0.1500</div></div>
+    <div class="slider"><label>Noise</label><input type="range" id="noise" min=0 max=0.2 step=0.001 value=0.02><div class="val">0.020</div></div>
+    <div class="btn" id="audio">ENABLE AUDIO</div>
+    <div class="btn" id="reset">RESET TO VACUUM</div>
+  </div>
+  <div class="panel" id="telemetry">
+    <h1>DIAGNOSTICS</h1>
+    <div class="readout"><span>Hamiltonian H</span><span id="H">0.000000</span></div>
+    <div class="readout"><span>Drift (×10⁻⁶)</span><span id="drift">0.00</span></div>
+    <div class="readout"><span>Lyapunov λ</span><span id="lyap">0.000</span></div>
+    <div class="readout"><span>Regime</span><span id="regime">Quasiperiodic</span></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://esm.sh/three@0.160.0';
+import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+const Z = [14.134725,21.022040,25.010858,30.424876,32.935062,37.586179,40.918719,43.327073];
+
+class TRD {
+  constructor() { this.reset(); }
+  reset() {
+    this.q = new Float32Array(8).fill(0.5);
+    this.p = new Float32Array(8).fill(0);
+    this.t = 0; this.H0 = 0;
+    this.params = {a:0.1,b:0.05,J:0.15,z:0.15,n:0.02,dt:0.008};
+    this.T = 0; this.Vself = 0; this.Vmix = 0; this.Vflux = 0; this.Vzeta = 0;
+  }
+  step() {
+    const dt = this.params.dt;
+    const f1 = this.grad(this.q,this.p,this.t);
+    const p1 = this.p.map((v,i)=>v+0.5*dt*f1[i]);
+    const q1 = this.q.map((v,i)=>v+dt*p1[i]);
+    const f2 = this.grad(q1,p1,this.t+dt);
+    for(let i=0;i<8;i++){
+      this.p[i]=p1[i]+0.5*dt*f2[i];
+      this.q[i]=q1[i];
+    }
+    this.t+=dt;
+    this.T = this.p.reduce((s,v)=>s+v*v,0)*0.5;
+    this.Vself = this.params.a * this.q.reduce((s,v)=>s+v**4,0);
+    this.Vmix = this.params.b * this.q.reduce((s,v,i)=>s+v**2*this.q[(i+1)%8]**2,0);
+    this.Vflux = this.params.J * this.q.reduce((s,v,i)=>{
+      const l=(i+7)%8,r=(i+1)%8;
+      return s + (v*this.p[l] - this.q[l]*this.p[r]);
+    },0);
+    const zetaWave = Z.reduce((s,z)=>s+Math.cos(z*this.t*0.44)*Math.exp(-z*z/900),0);
+    this.Vzeta = this.params.z * zetaWave * this.q.reduce((a,b)=>a+b,0);
+    const H = this.T + this.Vself + this.Vmix + Math.abs(this.Vflux) + Math.abs(this.Vzeta);
+    if(this.t<0.1) this.H0 = H;
+    this.drift = this.H0 ? Math.abs((H-this.H0)/this.H0) : 0;
+  }
+  grad(q,p,t){
+    const g=new Float32Array(8), e=1e-5, v0=this.V(q,t);
+    for(let i=0;i<8;i++){
+      const qq=q.slice(); qq[i]+=e;
+      g[i]=-(this.V(qq,t)-v0)/e;
+      const l=(i+7)%8,r=(i+1)%8;
+      g[i]+=this.params.J*(q[r]*p[l]-q[l]*p[r]);
+      g[i]+=this.params.n*(Math.random()-0.5)*0.02;
+    }
+    return g;
+  }
+  V(q,t){ return this.Vself + this.Vmix + Math.abs(this.Vflux) + Math.abs(this.Vzeta); }
+}
+const trd = new TRD();
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.1,300);
+camera.position.set(20,12,20);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0x0088ff,0.4));
+scene.add(new THREE.PointLight(0x00ffff,2,100));
+scene.add(new THREE.PointLight(0xff00ff,1.5,100));
+
+const rings = [];
+const colors = [0x00ffff,0x88ff00,0xff00ff];
+for(let i=0;i<8;i++){
+  const geo = new THREE.TorusGeometry(1.4,0.12,20,120);
+  const mat = new THREE.MeshStandardMaterial({color:0x001133,emissive:colors[i%3],emissiveIntensity:2,metalness:0.95,roughness:0.1});
+  const mesh = new THREE.Mesh(geo,mat);
+  mesh.rotation.x = Math.PI/2;
+  const angle = i * 2.399963;
+  const rad = 3 + i * 1.2;
+  mesh.position.set(Math.cos(angle)*rad, (i-3.5)*1.6, Math.sin(angle)*rad);
+  scene.add(mesh);
+  rings.push(mesh);
+}
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+controls.autoRotate=true;
+controls.autoRotateSpeed=0.6;
+
+// Audio
+let ctx, oscs=[];
+function initAudio(){
+  if(ctx) return;
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  oscs=Z.map((z,i)=>{
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=i%2?'sine':'triangle';
+    o.frequency.value=377*(z/Z[0]);
+    g.gain.value=0;
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    return {o,g};
+  });
+}
+
+// UI
+['alpha','beta','J','zeta','noise'].forEach((k,i)=>{
+  const el=document.getElementById(k==='J'?'J':k);
+  el.oninput=()=>{ trd.params[k==='J'?'J':k.toLowerCase()]=parseFloat(el.value); };
+});
+document.getElementById('audio').onclick=()=>{initAudio();this.textContent='AUDIO ACTIVE';this.classList.add('active');};
+document.getElementById('reset').onclick=()=>{trd.reset();};
+
+// Loop
+function loop(){
+  requestAnimationFrame(loop);
+  trd.step();
+  rings.forEach((r,i)=>{
+    r.scale.setScalar(0.5 + trd.q[i]*1.3);
+    r.material.emissiveIntensity = 0.8 + Math.abs(trd.p[i])*5;
+    r.rotation.z += trd.p[i]*0.15;
+  });
+  if(ctx) oscs.forEach((n,i)=>n.g.gain.setTargetAtTime(Math.min(trd.p[i]**2*0.5,0.2),ctx.currentTime,0.05));
+  
+  document.getElementById('T').textContent = trd.T.toFixed(3);
+  document.getElementById('Vself').textContent = trd.Vself.toFixed(3);
+  document.getElementById('Vmix').textContent = trd.Vmix.toFixed(3);
+  document.getElementById('Vflux').textContent = trd.Vflux.toFixed(3);
+  document.getElementById('Vzeta').textContent = trd.Vzeta.toFixed(3);
+  document.getElementById('totalL').textContent = (trd.T - trd.Vself - trd.Vmix - Math.abs(trd.Vflux) - Math.abs(trd.Vzeta)).toFixed(3);
+  
+  const H = trd.T + trd.Vself + trd.Vmix + Math.abs(trd.Vflux) + Math.abs(trd.Vzeta);
+  document.getElementById('H').textContent = H.toFixed(6);
+  document.getElementById('drift').textContent = (trd.drift*1e6).toFixed(2);
+  document.getElementById('lyap').textContent = (Math.log(trd.drift*1e9+1)/trd.t||0).toFixed(5);
+  document.getElementById('regime').textContent = trd.drift<1e-7?'COHERENT':(trd.drift>1e-4?'CHAOTIC':'BREATHING');
+  
+  controls.update();
+  renderer.render(scene,camera);
+}
+loop();
+
+window.addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+</script>
+</body>
+</html>
